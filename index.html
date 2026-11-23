@@ -1,0 +1,237 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zeze Cloud</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0c1019;color:#f4f6fc;font-family:Arial}
+header{background:#151c2b;padding:22px}
+header h1{margin:0;color:#79aaff}
+header p{color:#aab5c8;font-size:13px}
+main{max-width:900px;margin:auto;padding:18px}
+.tabs{display:flex;gap:10px;margin:20px 0}
+button,.download{border:0;border-radius:8px;padding:11px 15px;background:#3478ee;color:white;cursor:pointer;font-weight:bold}
+.tabs button{flex:1;background:#202b40}
+.tabs button.active{background:#3478ee}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.card,.panel{background:#151c2b;border:1px solid #293449;padding:14px;border-radius:12px;margin-bottom:14px}
+video{width:100%;border-radius:8px;background:#000}
+.card h3{font-size:14px;overflow-wrap:anywhere}
+.card p,.muted{font-size:12px;color:#aab5c8}
+.download{display:inline-block;text-decoration:none;font-size:13px}
+input{display:block;width:100%;padding:12px;margin:10px 0;background:#0c1019;border:1px solid #35425a;color:white;border-radius:8px}
+.hidden{display:none!important}
+.delete{background:#bd394b;margin-top:10px}
+footer{text-align:center;color:#78869d;padding:25px;font-size:12px}
+#message{color:#80b6ff;font-size:13px;margin:12px 0}
+</style>
+</head>
+<body>
+
+<header>
+<h1>☁️ Zeze Cloud</h1>
+<p>Video & File Sharing • Gratis untuk semua pengunjung</p>
+</header>
+
+<main>
+<div class="tabs">
+<button id="vtab" class="active" onclick="tab('video')">🎬 Video</button>
+<button id="ftab" onclick="tab('file')">📁 File</button>
+</div>
+
+<section id="video">
+<h2>Video Terbaru</h2>
+<div id="videos" class="grid">Memuat...</div>
+</section>
+
+<section id="file" class="hidden">
+<h2>Download File</h2>
+<div id="files" class="grid">Memuat...</div>
+</section>
+
+<div class="panel">
+<button onclick="document.getElementById('admin').classList.toggle('hidden')">🔐 Admin</button>
+
+<div id="admin" class="hidden">
+<div id="login">
+<h3>Login Admin</h3>
+<input id="email" type="email" placeholder="Email admin">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Masuk</button>
+</div>
+
+<div id="uploader" class="hidden">
+<h3>Upload Video / File</h3>
+<input id="pick" type="file" multiple>
+<button onclick="upload()">Upload Sekarang</button>
+<button onclick="logout()" style="background:#bd394b">Logout</button>
+</div>
+</div>
+</div>
+
+<div id="message"></div>
+</main>
+
+<footer>© Zeze Cloud</footer>
+
+<script>
+const URL="https://ahmiscuwoyenpnjfdwlw.supabase.co";
+const KEY="sb_publishable_MVea74GSrSWxVnANrsdm-Q_pX5EmYwE";
+const BUCKET="zeze-video-file";
+
+const db=window.supabase.createClient(URL,KEY);
+let user=null;
+
+function msg(t){
+ document.getElementById("message").textContent=t;
+}
+
+function tab(t){
+ document.getElementById("video").classList.toggle("hidden",t!=="video");
+ document.getElementById("file").classList.toggle("hidden",t!=="file");
+ document.getElementById("vtab").classList.toggle("active",t==="video");
+ document.getElementById("ftab").classList.toggle("active",t==="file");
+}
+
+function videoFile(n){
+ return /\.(mp4|webm|mov|m4v|ogv)$/i.test(n);
+}
+
+function element(tag,text,cls){
+ const e=document.createElement(tag);
+ if(text!==undefined)e.textContent=text;
+ if(cls)e.className=cls;
+ return e;
+}
+
+async function load(){
+ const vb=document.getElementById("videos");
+ const fb=document.getElementById("files");
+ vb.textContent="Memuat...";
+ fb.textContent="Memuat...";
+
+ const {data,error}=await db.storage.from(BUCKET).list("",{
+  limit:100,sortBy:{column:"created_at",order:"desc"}
+ });
+
+ if(error){
+  vb.textContent="Gagal memuat. Periksa policy SELECT.";
+  fb.textContent="Gagal memuat file.";
+  return;
+ }
+
+ vb.replaceChildren();
+ fb.replaceChildren();
+
+ const items=(data||[]).filter(x=>x.name&&!x.name.startsWith("."));
+
+ function addCard(item,isVideo){
+  const card=element("article",undefined,"card");
+  const url=db.storage.from(BUCKET).getPublicUrl(item.name).data.publicUrl;
+
+  if(isVideo){
+   const v=element("video");
+   v.controls=true;
+   v.preload="metadata";
+   v.src=url;
+   card.append(v);
+  }else{
+   card.append(element("div","📄"));
+  }
+
+  card.append(element("h3",item.name));
+  card.append(element("p",item.metadata?.size?
+   (item.metadata.size/1048576).toFixed(2)+" MB":"File"));
+
+  const a=element("a","⬇ Download","download");
+  a.href=url;
+  a.target="_blank";
+  a.rel="noopener";
+  a.download=item.name;
+  card.append(a);
+
+  if(user){
+   const del=element("button","Hapus","delete");
+   del.onclick=()=>removeFile(item.name);
+   card.append(del);
+  }
+
+  (isVideo?vb:fb).append(card);
+ }
+
+ items.forEach(item=>addCard(item,videoFile(item.name)));
+
+ if(!vb.children.length)vb.textContent="Belum ada video.";
+ if(!fb.children.length)fb.textContent="Belum ada file.";
+}
+
+async function login(){
+ const email=document.getElementById("email").value.trim();
+ const password=document.getElementById("password").value;
+ if(!email||!password){msg("Isi email dan password.");return;}
+
+ msg("Sedang masuk...");
+ const {error}=await db.auth.signInWithPassword({email,password});
+ if(error){msg("Login gagal: "+error.message);return;}
+ msg("Login berhasil.");
+}
+
+async function logout(){
+ await db.auth.signOut();
+ msg("Berhasil logout.");
+}
+
+async function upload(){
+ if(!user){msg("Login admin dahulu.");return;}
+ const files=[...document.getElementById("pick").files];
+ if(!files.length){msg("Pilih file dahulu.");return;}
+
+ for(let i=0;i<files.length;i++){
+  const f=files[i];
+  const name=Date.now()+"_"+i+"_"+f.name.replace(/[\/\\]/g,"_");
+  msg("Mengupload "+f.name+"...");
+
+  const {error}=await db.storage.from(BUCKET).upload(name,f,{
+   contentType:f.type||"application/octet-stream",
+   upsert:false
+  });
+
+  if(error){msg("Upload gagal: "+error.message);return;}
+ }
+
+ document.getElementById("pick").value="";
+ msg("Semua file berhasil diupload!");
+ await load();
+}
+
+async function removeFile(name){
+ if(!user||!confirm("Hapus file ini?"))return;
+ const {error}=await db.storage.from(BUCKET).remove([name]);
+ if(error){msg("Gagal menghapus: "+error.message);return;}
+ msg("File berhasil dihapus.");
+ await load();
+}
+
+async function authUpdate(){
+ const {data}=await db.auth.getSession();
+ user=data.session?.user||null;
+ document.getElementById("login").classList.toggle("hidden",!!user);
+ document.getElementById("uploader").classList.toggle("hidden",!user);
+ await load();
+}
+
+db.auth.onAuthStateChange((_event,session)=>{
+ user=session?.user||null;
+ document.getElementById("login").classList.toggle("hidden",!!user);
+ document.getElementById("uploader").classList.toggle("hidden",!user);
+ load();
+});
+
+authUpdate();
+</script>
+</body>
+</html>
