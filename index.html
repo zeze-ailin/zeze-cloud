@@ -8,27 +8,28 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#101522;color:#fff;font-family:Arial,sans-serif}
-header{padding:25px 18px;background:#19243a;text-align:center}
-h1{margin:0;color:#7db8ff}
+body{margin:0;background:#101522;color:white;font-family:Arial,sans-serif}
+header{background:#19243a;text-align:center;padding:25px}
+h1{color:#7db8ff;margin:0}
 header p{color:#bbc7dc}
 main{max-width:850px;margin:auto;padding:18px}
-button,.upload{border:0;border-radius:9px;padding:11px 16px;background:#397bd8;color:white;font-weight:bold;cursor:pointer}
+button{border:0;border-radius:9px;padding:12px 16px;background:#397bd8;color:white;font-weight:bold;cursor:pointer;margin:4px}
 button:disabled{opacity:.5}
-.tabs{display:flex;gap:10px;margin:15px 0}
+.tabs{display:flex;gap:8px}
 .tabs button{flex:1}
-.panel{background:#1b263a;padding:16px;border-radius:12px;margin-bottom:15px}
-input{width:100%;padding:12px;margin:7px 0 12px;border-radius:8px;border:1px solid #52617a;background:#101522;color:white}
+.panel{background:#1b263a;padding:16px;border-radius:12px;margin:15px 0}
+input{width:100%;padding:12px;margin:8px 0 14px;border-radius:8px;border:1px solid #52617a;background:#101522;color:white}
 .item{background:#25334b;padding:13px;border-radius:10px;margin:12px 0;overflow-wrap:anywhere}
-.item video{width:100%;max-height:420px;border-radius:8px;margin-top:10px}
+.item video{width:100%;max-height:420px;margin-top:10px}
 .item a{color:#8fc2ff}
-.item button{margin:8px 5px 0 0;background:#b83f4c}
-.small{color:#aebbd0;font-size:13px}
-.hidden{display:none}
+.item .delete{background:#b83f4c}
 #status{padding:10px;color:#a9d0ff;overflow-wrap:anywhere}
+.hidden{display:none}
+.small{color:#aebbd0;font-size:13px}
 </style>
 </head>
 <body>
+
 <header>
 <h1>☁️ Zeze Cloud</h1>
 <p>Tempat menyimpan dan berbagi video & file</p>
@@ -41,7 +42,7 @@ input{width:100%;padding:12px;margin:7px 0 12px;border-radius:8px;border:1px sol
 <button onclick="showTab('admin')">🔐 Admin</button>
 </div>
 
-<div id="status">Menghubungkan ke penyimpanan...</div>
+<div id="status">Menghubungkan...</div>
 
 <section id="video" class="panel">
 <h2>🎬 Video</h2>
@@ -55,8 +56,9 @@ input{width:100%;padding:12px;margin:7px 0 12px;border-radius:8px;border:1px sol
 
 <section id="admin" class="panel hidden">
 <h2>🔐 Admin</h2>
+
 <div id="loginBox">
-<p>Login untuk mengelola isi Zeze Cloud.</p>
+<p>Login untuk mengelola Zeze Cloud.</p>
 <label>Email</label>
 <input id="email" type="email" placeholder="Email admin">
 <label>Password</label>
@@ -66,7 +68,7 @@ input{width:100%;padding:12px;margin:7px 0 12px;border-radius:8px;border:1px sol
 
 <div id="adminBox" class="hidden">
 <p>Login admin berhasil.</p>
-<p class="small">Pilih video atau file yang ingin diunggah.</p>
+<p class="small">Pilih video atau file untuk diunggah.</p>
 <input id="uploadInput" type="file">
 <button id="uploadBtn" onclick="uploadFile()">⬆️ Upload</button>
 <button onclick="logout()">Logout</button>
@@ -75,16 +77,19 @@ input{width:100%;padding:12px;margin:7px 0 12px;border-radius:8px;border:1px sol
 </main>
 
 <script>
+/* KONFIGURASI */
 const URL = "https://ahmiscuwoyenpnjfdwlw.supabase.co";
 const KEY = "sb_publishable_MVea74GSrSWxVnANrsdm-Q_pX5EmYwE";
 const BUCKET = "zeze-video-file";
 const ADMIN_UID = "4b1a64a0-32f5-428a-a197-d0fec344c66d";
 
-const db = window.supabase.createClient(URL, KEY);
-let currentUser = null;
+/* DB DIDEKLARASIKAN SEBELUM DIGUNAKAN */
+var db = null;
+var currentUser = null;
+var authReady = false;
 
 function status(message){
- document.getElementById("status").textContent = message;
+ document.getElementById("status").textContent=message;
 }
 
 function showTab(tab){
@@ -93,87 +98,98 @@ function showTab(tab){
  });
 }
 
-function safeName(name){
- return name.replace(/[&<>"']/g,c=>({
-  "&":"&amp;","<":"&lt;",">":"&gt;",
-  '"':"&quot;","'":"&#39;"
- }[c]));
+function updateAdmin(){
+ const isAdmin=currentUser && currentUser.id===ADMIN_UID;
+ document.getElementById("loginBox").classList.toggle("hidden",!!isAdmin);
+ document.getElementById("adminBox").classList.toggle("hidden",!isAdmin);
+}
+
+function addText(parent,text){
+ const el=document.createElement("div");
+ el.textContent=text;
+ parent.appendChild(el);
 }
 
 async function loadFiles(){
+ if(!db)return;
+
  const videoBox=document.getElementById("videos");
  const fileBox=document.getElementById("files");
 
  videoBox.textContent="Memuat video...";
  fileBox.textContent="Memuat file...";
 
- const {data,error}=await db.storage.from(BUCKET).list("",{
-  limit:100,
-  sortBy:{column:"created_at",order:"desc"}
- });
+ try{
+  const {data,error}=await db.storage.from(BUCKET).list("",{
+   limit:100,
+   sortBy:{column:"created_at",order:"desc"}
+  });
 
- if(error){
-  videoBox.textContent="Gagal memuat: "+error.message;
-  fileBox.textContent="Gagal memuat: "+error.message;
-  return;
- }
+  if(error)throw error;
 
- videoBox.innerHTML="";
- fileBox.innerHTML="";
+  videoBox.innerHTML="";
+  fileBox.innerHTML="";
 
- if(!data || data.length===0){
-  videoBox.textContent="Belum ada video.";
-  fileBox.textContent="Belum ada file.";
-  return;
- }
-
- let videoCount=0,fileCount=0;
-
- data.forEach(file=>{
-  if(!file.name || file.name.startsWith("."))return;
-
-  const {data:publicData}=db.storage.from(BUCKET).getPublicUrl(file.name);
-  const url=publicData.publicUrl;
-  const type=(file.metadata?.mimetype || file.metadata?.contentType || "").toLowerCase();
-  const isVideo=type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(file.name);
-
-  const item=document.createElement("div");
-  item.className="item";
-
-  const title=document.createElement("strong");
-  title.textContent=file.name;
-  item.appendChild(title);
-
-  if(isVideo){
-   videoCount++;
-   const player=document.createElement("video");
-   player.controls=true;
-   player.preload="metadata";
-   player.src=url;
-   item.appendChild(player);
-  }else{
-   fileCount++;
-   const link=document.createElement("a");
-   link.href=url+"?download";
-   link.textContent="⬇️ Download file";
-   link.target="_blank";
-   link.rel="noopener";
-   item.appendChild(document.createElement("br"));
-   item.appendChild(link);
+  if(!data || data.length===0){
+   videoBox.textContent="Belum ada video.";
+   fileBox.textContent="Belum ada file.";
+   return;
   }
 
-  if(currentUser && currentUser.id===ADMIN_UID){
-   const del=document.createElement("button");
-   del.textContent="Hapus";
-   del.onclick=()=>deleteFile(file.name);
-   item.appendChild(del);
-  }
+  let videoCount=0;
+  let fileCount=0;
 
-  (isVideo?videoBox:fileBox).appendChild(item);
- });
+  data.forEach(file=>{
+   if(!file.name || file.name.startsWith("."))return;
 
- if(!videoCount)videoBox.textContent="Belum ada video.";
- if(!fileCount)fileBox.textContent="Belum ada file.";
+   const type=(file.metadata?.mimetype || file.metadata?.contentType || "").toLowerCase();
+   const isVideo=type.startsWith("video/") || /\.(mp4|webm|mov|m4v|ogv)$/i.test(file.name);
+
+   const {data:publicData}=db.storage.from(BUCKET).getPublicUrl(file.name);
+
+   const item=document.createElement("div");
+   item.className="item";
+
+   const title=document.createElement("strong");
+   title.textContent=file.name;
+   item.appendChild(title);
+
+   if(isVideo){
+    videoCount++;
+    const player=document.createElement("video");
+    player.controls=true;
+    player.preload="metadata";
+    player.src=publicData.publicUrl;
+    item.appendChild(player);
+   }else{
+    fileCount++;
+    const link=document.createElement("a");
+    link.href=publicData.publicUrl+"?download";
+    link.textContent="⬇️ Download file";
+    link.target="_blank";
+    link.rel="noopener";
+    item.appendChild(document.createElement("br"));
+    item.appendChild(link);
+   }
+
+   if(currentUser && currentUser.id===ADMIN_UID){
+    const del=document.createElement("button");
+    del.className="delete";
+    del.textContent="Hapus";
+    del.onclick=()=>deleteFile(file.name);
+    item.appendChild(del);
+   }
+
+   (isVideo?videoBox:fileBox).appendChild(item);
+  });
+
+  if(!videoCount)videoBox.textContent="Belum ada video.";
+  if(!fileCount)fileBox.textContent="Belum ada file.";
+
+ }catch(e){
+  videoBox.textContent="Gagal memuat: "+e.message;
+  fileBox.textContent="Gagal memuat: "+e.message;
+ }
 }
 
 async function login(){
@@ -188,10 +204,14 @@ async function login(){
 
  btn.disabled=true;
  btn.textContent="Sedang masuk...";
- status("Menghubungkan akun...");
+ status("Memeriksa akun...");
 
  try{
-  const {data,error}=await db.auth.signInWithPassword({email,password});
+  const {data,error}=await db.auth.signInWithPassword({
+   email:email,
+   password:password
+  });
+
   if(error)throw error;
 
   if(data.user.id!==ADMIN_UID){
@@ -201,8 +221,9 @@ async function login(){
 
   currentUser=data.user;
   updateAdmin();
-  status("Login admin berhasil.");
+  status("Login berhasil!");
   await loadFiles();
+
  }catch(e){
   status("Login gagal: "+e.message);
  }finally{
@@ -211,18 +232,18 @@ async function login(){
  }
 }
 
-function updateAdmin(){
- const isAdmin=currentUser && currentUser.id===ADMIN_UID;
- document.getElementById("loginBox").classList.toggle("hidden",!!isAdmin);
- document.getElementById("adminBox").classList.toggle("hidden",!isAdmin);
-}
-
 async function logout(){
- await db.auth.signOut();
- currentUser=null;
- updateAdmin();
- status("Kamu sudah logout.");
- await loadFiles();
+ try{
+  const {error}=await db.auth.signOut();
+  if(error)throw error;
+
+  currentUser=null;
+  updateAdmin();
+  status("Berhasil logout.");
+  await loadFiles();
+ }catch(e){
+  status("Logout gagal: "+e.message);
+ }
 }
 
 async function uploadFile(){
@@ -234,6 +255,7 @@ async function uploadFile(){
   status("Login admin diperlukan.");
   return;
  }
+
  if(!file){
   status("Pilih file terlebih dahulu.");
   return;
@@ -257,6 +279,7 @@ async function uploadFile(){
   status("Upload berhasil!");
   input.value="";
   await loadFiles();
+
  }catch(e){
   status("Upload gagal: "+e.message);
  }finally{
@@ -269,19 +292,28 @@ async function deleteFile(name){
  if(!confirm("Yakin ingin menghapus "+name+"?"))return;
 
  status("Menghapus file...");
- const {error}=await db.storage.from(BUCKET).remove([name]);
 
- if(error){
-  status("Gagal menghapus: "+error.message);
-  return;
+ try{
+  const {error}=await db.storage.from(BUCKET).remove([name]);
+  if(error)throw error;
+
+  status("File berhasil dihapus.");
+  await loadFiles();
+ }catch(e){
+  status("Gagal menghapus: "+e.message);
  }
-
- status("File berhasil dihapus.");
- await loadFiles();
 }
 
+/* MULAI KONEKSI */
 async function start(){
  try{
+  if(!window.supabase){
+   throw new Error("Library Supabase gagal dimuat.");
+  }
+
+  const {createClient}=window.supabase;
+  db=createClient(URL,KEY);
+
   const {data,error}=await db.auth.getSession();
   if(error)throw error;
 
@@ -293,20 +325,22 @@ async function start(){
   }
 
   updateAdmin();
-  status("Terhubung. Memuat daftar file...");
+  status("Terhubung. Memuat daftar...");
   await loadFiles();
+
+  db.auth.onAuthStateChange((event,session)=>{
+   currentUser=session?.user || null;
+   if(currentUser && currentUser.id!==ADMIN_UID){
+    currentUser=null;
+   }
+   updateAdmin();
+   loadFiles();
+  });
+
  }catch(e){
   status("Koneksi gagal: "+e.message);
  }
 }
-
-db.auth.onAuthStateChange((event,session)=>{
- currentUser=session?.user || null;
- if(currentUser && currentUser.id!==ADMIN_UID){
-  currentUser=null;
- }
- updateAdmin();
-});
 
 start();
 </script>
